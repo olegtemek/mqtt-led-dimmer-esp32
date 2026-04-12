@@ -2,6 +2,7 @@
 #include <config.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -15,12 +16,43 @@ void publishState()
   client.publish(MQTT_TOPIC_STATE, brightnessStr);
 }
 
+void publishDiscovery()
+{
+  String topic = String(HA_DISCOVERY_PREFIX) + "/light/" + String(DEVICE_ID) + "/config";
+
+  JsonDocument doc;
+  doc["name"] = DEVICE_NAME;
+  doc["unique_id"] = DEVICE_ID;
+  doc["command_topic"] = MQTT_TOPIC_SET;
+  doc["state_topic"] = MQTT_TOPIC_STATE;
+  doc["brightness_command_topic"] = MQTT_TOPIC_SET;
+  doc["brightness_state_topic"] = MQTT_TOPIC_STATE;
+  doc["brightness_scale"] = 100;
+  doc["on_command_type"] = "brightness";
+  doc["payload_on"] = "100";
+  doc["payload_off"] = "0";
+
+  JsonObject device = doc["device"].to<JsonObject>();
+  JsonArray identifiers = device["identifiers"].to<JsonArray>();
+  identifiers.add(DEVICE_ID);
+  device["name"] = DEVICE_NAME;
+  device["manufacturer"] = "DIY";
+  device["model"] = "ESP32 LED Dimmer";
+
+  char payload[640];
+  serializeJson(doc, payload);
+
+  client.publish(topic.c_str(), payload, true);
+  Serial.println("HA Discovery config published:");
+}
+
 void reconnect()
 {
   while (!client.connected())
   {
     if (client.connect(HOSTNAME, MQTT_USER, MQTT_PASS))
     {
+      publishDiscovery();
       client.subscribe(MQTT_TOPIC_SET);
       analogWrite(MOS_PIN, currentBrightness);
       publishState();
@@ -48,7 +80,7 @@ void callback(char *topic, byte *payload, unsigned int length)
     Serial.println(message);
 
     int brightness = message.toInt();
-    brightness = constrain(brightness, 0, 255);
+    brightness = constrain(brightness, 0, 100);
 
     currentBrightness = (uint8_t)brightness;
     analogWrite(MOS_PIN, currentBrightness);
@@ -74,6 +106,7 @@ void setup()
   }
 
   client.setServer(MQTT_HOST, MQTT_PORT);
+  client.setBufferSize(640);
   client.setCallback(callback);
 }
 
