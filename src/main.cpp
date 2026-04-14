@@ -46,23 +46,20 @@ void publishDiscovery()
   Serial.println("HA Discovery config published:");
 }
 
-void reconnect()
+void reconnectMqtt()
 {
-  while (!client.connected())
+  if (client.connect(HOSTNAME, MQTT_USER, MQTT_PASS))
   {
-    if (client.connect(HOSTNAME, MQTT_USER, MQTT_PASS))
-    {
-      publishDiscovery();
-      client.subscribe(MQTT_TOPIC_SET);
-      analogWrite(MOS_PIN, currentBrightness);
-      publishState();
-    }
-    else
-    {
-      Serial.print("Cannot connect to MQTT: ");
-      Serial.println(client.state());
-      delay(5000);
-    }
+    Serial.println("MQTT connected");
+    publishDiscovery();
+    client.subscribe(MQTT_TOPIC_SET);
+    analogWrite(MOS_PIN, currentBrightness);
+    publishState();
+  }
+  else
+  {
+    Serial.print("Cannot connect to MQTT: ");
+    Serial.println(client.state());
   }
 }
 
@@ -110,11 +107,31 @@ void setup()
   client.setCallback(callback);
 }
 
+unsigned long lastReconnectAttempt = 0;
+const unsigned long RECONNECT_INTERVAL = 5000;
+
 void loop()
 {
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.println("WiFi disconnected, reconnecting...");
+    WiFi.disconnect();
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    delay(5000);
+    return;
+  }
+
   if (!client.connected())
   {
-    reconnect();
+    unsigned long now = millis();
+    if (now - lastReconnectAttempt >= RECONNECT_INTERVAL)
+    {
+      lastReconnectAttempt = now;
+      reconnectMqtt();
+    }
   }
-  client.loop();
+  else
+  {
+    client.loop();
+  }
 }
